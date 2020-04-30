@@ -1,4 +1,3 @@
-#![feature(type_ascription)]
 use errtools::WrapErr;
 use std::error::Error;
 use thiserror::Error;
@@ -41,10 +40,9 @@ fn report_error(error: &(dyn Error)) {
 }
 
 fn do_thing(path: &str) -> Result<String, PublicErrorStruct> {
-    let s = <Result<_, _> as WrapErr<_, _, PrivateKind>>::wrap_err_with(
-        std::fs::read_to_string(path),
-        || format!("unable to read file from path: {}", path),
-    )?;
+    let s = std::fs::read_to_string(path).wrap_err_with::<_, _, PrivateKind>(|| {
+        format!("unable to read file from path: {}", path)
+    })?;
 
     Ok(s)
 }

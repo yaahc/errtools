@@ -1,4 +1,9 @@
-use errtools::WrapErr;
+//! An example of usage of the `WrapErr` trait with a public enum
+//!
+//! To use `WrapErr` with your type you have to impl from for (E: Error, String), this lets you
+//! wrap arbitrary errors and add a message to them, it will then construct your type using this
+//! from impl to conveniently create a new type
+use errtools::{ErrTools, WrapErr};
 use std::error::Error;
 use thiserror::Error;
 
@@ -35,7 +40,11 @@ fn report_error(error: &(dyn Error)) {
 fn main() {
     let path = "fake_file";
     let error: PublicEnumError = std::fs::read_to_string(path)
-        .wrap_err_with(|| format!("unable to read file from path: {}", path))
+        .wrap_err_with::<_, _, PublicEnumError>(|| {
+            format!("unable to read file from path: {}", path)
+        })
+        .wrap_err("total failure!")
         .unwrap_err();
-    report_error(&error);
+
+    report_error(&error.wrap_err::<_, PublicEnumError>("one more thing"));
 }

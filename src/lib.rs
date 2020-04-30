@@ -12,26 +12,45 @@ pub trait ErrTools<'a>: Error {
     fn serialize(&'a self) -> Self::Serialize;
 
     fn downcast_refchain<T: Error + Sized + 'static>(&self) -> Option<&T>;
+
+    fn wrap_err<D, E2>(self, msg: D) -> E2
+    where
+        Self: Sized,
+        D: Display + Send + Sync + 'static,
+        E2: From<(Self, String)>,
+    {
+        E2::from((self, format!("{}", msg)))
+    }
+
+    fn wrap_err_with<D, F, E2>(self, msg: F) -> E2
+    where
+        Self: Sized,
+        D: Display + Send + Sync + 'static,
+        E2: From<(Self, String)>,
+        F: FnOnce() -> D,
+    {
+        E2::from((self, format!("{}", msg())))
+    }
 }
 
-pub trait WrapErr<T, E, E2> {
+pub trait WrapErr<T, E> {
     /// Wrap the error value with a new adhoc error
-    fn wrap_err<D>(self, msg: D) -> Result<T, E2>
+    fn wrap_err<D, E2>(self, msg: D) -> Result<T, E2>
     where
         D: Display + Send + Sync + 'static,
         E2: From<(E, String)>;
 
     /// Wrap the error value with a new adhoc error that is evaluated lazily
     /// only once an error does occur.
-    fn wrap_err_with<D, F>(self, f: F) -> Result<T, E2>
+    fn wrap_err_with<D, F, E2>(self, f: F) -> Result<T, E2>
     where
         D: Display + Send + Sync + 'static,
         E2: From<(E, String)>,
         F: FnOnce() -> D;
 }
 
-impl<T, E, E2> WrapErr<T, E, E2> for Result<T, E> {
-    fn wrap_err<D>(self, msg: D) -> Result<T, E2>
+impl<T, E> WrapErr<T, E> for Result<T, E> {
+    fn wrap_err<D, E2>(self, msg: D) -> Result<T, E2>
     where
         D: Display + Send + Sync + 'static,
         E2: From<(E, String)>,
@@ -39,7 +58,7 @@ impl<T, E, E2> WrapErr<T, E, E2> for Result<T, E> {
         self.map_err(|source| E2::from((source, format!("{}", msg))))
     }
 
-    fn wrap_err_with<D, F>(self, msg: F) -> Result<T, E2>
+    fn wrap_err_with<D, F, E2>(self, msg: F) -> Result<T, E2>
     where
         D: Display + Send + Sync + 'static,
         E2: From<(E, String)>,
@@ -208,5 +227,13 @@ mod tests {
 
         assert!(matches!(e.downcast_refchain::<E3>(), Some(&E3(_))));
         assert!(matches!(e.downcast_refchain::<std::io::Error>(), None));
+    }
+
+    #[test]
+    fn wrap_err_on_trait_object() {
+        use crate::ErrTools;
+
+        let e: &dyn Error = &E2(E1);
+        e.wrap_err("hi");
     }
 }
