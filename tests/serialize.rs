@@ -1,18 +1,22 @@
-use std::error::Error;
 use errtools::ErrTools;
+use std::error::Error;
 use std::fmt;
 
 #[test]
 fn serialize_eyre() {
     use eyre::{eyre, ErrReport};
-    let err: ErrReport = eyre!("root cause").wrap_err("second error").wrap_err("outermost error");
+    let err: ErrReport = eyre!("root cause")
+        .wrap_err("second error")
+        .wrap_err("outermost error");
     let json = serde_json::to_string_pretty(&err.serialize()).unwrap();
     println!("{}", json);
 }
 
 #[test]
 fn serialize_anyhow() {
-    let err = anyhow::anyhow!("root cause").context("second error").context("outermost error");
+    let err = anyhow::anyhow!("root cause")
+        .context("second error")
+        .context("outermost error");
     let json = serde_json::to_string_pretty(&err.serialize()).unwrap();
     println!("{}", json);
 }
@@ -39,7 +43,7 @@ impl fmt::Display for SecondError {
 
 impl std::error::Error for SecondError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
-        Some(&*self)
+        Some(&self.0)
     }
 }
 
@@ -51,5 +55,4 @@ fn serialize_concrete() {
     let err: &dyn Error = &err;
     let json = serde_json::to_string_pretty(&err.serialize()).unwrap();
     println!("dyn serialization:\n{}", json);
-    panic!();
 }

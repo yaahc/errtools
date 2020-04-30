@@ -10,6 +10,8 @@ pub trait ErrTools<'a>: Error {
     type Serialize;
 
     fn serialize(&'a self) -> Self::Serialize;
+
+    fn downcast_refchain<T: Error + Sized + 'static>(&self) -> Option<&T>;
 }
 
 pub trait WrapErr<T, E, E2> {
@@ -56,6 +58,20 @@ where
     fn serialize(&'a self) -> Self::Serialize {
         SerializeableConcreteError(self)
     }
+
+    fn downcast_refchain<T: Error + Sized + 'static>(&self) -> Option<&T> {
+        let mut cur_error = Some(self as &dyn Error);
+
+        while let Some(error) = cur_error {
+            if let Some(error) = error.downcast_ref() {
+                return Some(error);
+            }
+
+            cur_error = error.source();
+        }
+
+        None
+    }
 }
 
 impl<'a> ErrTools<'a> for dyn Error + 'static {
@@ -64,6 +80,20 @@ impl<'a> ErrTools<'a> for dyn Error + 'static {
     fn serialize(&'a self) -> Self::Serialize {
         SerializeableError(self)
     }
+
+    fn downcast_refchain<T: Error + Sized + 'static>(&self) -> Option<&T> {
+        let mut cur_error = Some(self as &dyn Error);
+
+        while let Some(error) = cur_error {
+            if let Some(error) = error.downcast_ref() {
+                return Some(error);
+            }
+
+            cur_error = error.source();
+        }
+
+        None
+    }
 }
 
 impl<'a> ErrTools<'a> for dyn Error + Send + Sync + 'static {
@@ -71,6 +101,20 @@ impl<'a> ErrTools<'a> for dyn Error + Send + Sync + 'static {
 
     fn serialize(&'a self) -> Self::Serialize {
         SerializeableError(self)
+    }
+
+    fn downcast_refchain<T: Error + Sized + 'static>(&self) -> Option<&T> {
+        let mut cur_error = Some(self as &dyn Error);
+
+        while let Some(error) = cur_error {
+            if let Some(error) = error.downcast_ref() {
+                return Some(error);
+            }
+
+            cur_error = error.source();
+        }
+
+        None
     }
 }
 
@@ -108,5 +152,61 @@ where
         e.serialize_field("backtrace", &self.0.backtrace().map(ToString::to_string))?;
         e.serialize_field("source", &self.0.source().map(ErrTools::serialize))?;
         e.end()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use displaydoc::Display;
+    use std::error::Error;
+    use std::rc::Rc;
+
+    /// Fake Error
+    #[derive(Debug, Display)]
+    struct E1;
+
+    impl std::error::Error for E1 {}
+
+    /// Fake Error 2
+    #[derive(Debug, Display)]
+    struct E2(E1);
+
+    impl std::error::Error for E2 {
+        fn source(&self) -> Option<&(dyn Error + 'static)> {
+            Some(&self.0)
+        }
+    }
+
+    /// Non Send Error
+    #[derive(Debug, Display)]
+    struct E3(Rc<()>);
+
+    impl std::error::Error for E3 {}
+
+    #[test]
+    fn downcast_refchain_test() {
+        let e: &dyn Error = &E2(E1);
+
+        assert!(matches!(e.downcast_refchain::<E1>(), Some(&E1)));
+        assert!(matches!(e.downcast_refchain::<E2>(), Some(&E2(_))));
+        assert!(matches!(e.downcast_refchain::<std::io::Error>(), None));
+    }
+
+    #[test]
+    fn downcast_concrete_refchain_test() {
+        let e = E2(E1);
+
+        assert!(matches!(e.downcast_refchain::<E1>(), Some(&E1)));
+        assert!(matches!(e.downcast_refchain::<E2>(), Some(&E2(_))));
+        assert!(matches!(e.downcast_refchain::<std::io::Error>(), None));
+    }
+
+    #[test]
+    fn downcast_nonsend_refchain_test() {
+        let e = E3(Rc::new(()));
+
+        assert!(matches!(e.downcast_refchain::<E3>(), Some(&E3(_))));
+        assert!(matches!(e.downcast_refchain::<std::io::Error>(), None));
     }
 }
