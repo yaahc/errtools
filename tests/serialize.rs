@@ -1,3 +1,4 @@
+use errtools::deserialize;
 use errtools::ErrTools;
 use std::error::Error;
 use std::fmt;
@@ -55,4 +56,14 @@ fn serialize_concrete() {
     let err: &dyn Error = &err;
     let json = serde_json::to_string_pretty(&err.serialize()).unwrap();
     println!("dyn serialization:\n{}", json);
+}
+
+#[test]
+fn deserialize_concrete() {
+    let err = SecondError(RootError);
+    let json = serde_json::to_string_pretty(&err.serialize()).unwrap();
+    println!("concrete serialization:\n{}\n", json);
+
+    let err_out: deserialize::Error = serde_json::from_str(&json).unwrap();
+    println!("{:?}", err_out);
 }

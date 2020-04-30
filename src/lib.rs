@@ -1,10 +1,11 @@
 //! Extra error handling helpers
-#![feature(backtrace)]
 #![warn(missing_docs)]
 
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 use std::error::Error;
 use std::fmt::Display;
+
+pub mod deserialize;
 
 ///
 pub trait ErrTools<'a>: Error {
@@ -20,9 +21,9 @@ pub trait ErrTools<'a>: Error {
     ///
     fn wrap_err<D, E2>(self, msg: D) -> E2
     where
-        Self: Sized,
+        Self: Sized + 'static,
         D: Display + Send + Sync + 'static,
-        E2: From<(Self, String)>,
+        E2: From<(Self, String)> + 'static,
     {
         E2::from((self, format!("{}", msg)))
     }
@@ -160,7 +161,7 @@ impl Serialize for SerializeableError<'_> {
         let mut e = serializer.serialize_struct("error", 3)?;
         let msg = self.0.to_string();
         e.serialize_field("msg", &msg)?;
-        e.serialize_field("backtrace", &self.0.backtrace().map(ToString::to_string))?;
+        // e.serialize_field("backtrace", &self.0.backtrace().map(ToString::to_string))?;
         e.serialize_field("source", &self.0.source().map(ErrTools::serialize))?;
         e.end()
     }
@@ -176,9 +177,9 @@ where
     {
         let mut e = serializer.serialize_struct("error", 4)?;
         let msg = self.0.to_string();
-        e.serialize_field("type", &std::any::type_name::<E>())?;
+        e.serialize_field("type_name", &std::any::type_name::<E>())?;
         e.serialize_field("msg", &msg)?;
-        e.serialize_field("backtrace", &self.0.backtrace().map(ToString::to_string))?;
+        // e.serialize_field("backtrace", &self.0.backtrace().map(ToString::to_string))?;
         e.serialize_field("source", &self.0.source().map(ErrTools::serialize))?;
         e.end()
     }
@@ -239,11 +240,11 @@ mod tests {
         assert!(matches!(e.downcast_refchain::<std::io::Error>(), None));
     }
 
-    #[test]
-    fn wrap_err_on_trait_object() {
-        use crate::ErrTools;
+    //     #[test]
+    //     fn wrap_err_on_trait_object() {
+    //         use crate::ErrTools;
 
-        let e: &dyn Error = &E2(E1);
-        e.wrap_err("hi");
-    }
+    //         let e: &dyn Error = &E2(E1);
+    //         e.wrap_err("hi");
+    //     }
 }
