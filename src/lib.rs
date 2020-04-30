@@ -6,13 +6,18 @@ use serde::ser::{Serialize, SerializeStruct, Serializer};
 use std::error::Error;
 use std::fmt::Display;
 
+///
 pub trait ErrTools<'a>: Error {
+    ///
     type Serialize;
 
+    ///
     fn serialize(&'a self) -> Self::Serialize;
 
+    ///
     fn downcast_refchain<T: Error + Sized + 'static>(&self) -> Option<&T>;
 
+    ///
     fn wrap_err<D, E2>(self, msg: D) -> E2
     where
         Self: Sized,
@@ -22,6 +27,7 @@ pub trait ErrTools<'a>: Error {
         E2::from((self, format!("{}", msg)))
     }
 
+    ///
     fn wrap_err_with<D, F, E2>(self, msg: F) -> E2
     where
         Self: Sized,
@@ -33,6 +39,7 @@ pub trait ErrTools<'a>: Error {
     }
 }
 
+///
 pub trait WrapErr<T, E> {
     /// Wrap the error value with a new adhoc error
     fn wrap_err<D, E2>(self, msg: D) -> Result<T, E2>
@@ -137,7 +144,10 @@ impl<'a> ErrTools<'a> for dyn Error + Send + Sync + 'static {
     }
 }
 
+///
 pub struct SerializeableError<'a>(&'a dyn Error);
+
+///
 pub struct SerializeableConcreteError<'a, E>(&'a E)
 where
     E: Error + Sized + 'static;
