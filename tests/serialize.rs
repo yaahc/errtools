@@ -66,4 +66,5 @@ fn deserialize_concrete() {
 
     let err_out: deserialize::Error = serde_json::from_str(&json).unwrap();
     println!("{:?}", err_out);
+    panic!();
 }

@@ -158,7 +158,7 @@ impl Serialize for SerializeableError<'_> {
     where
         S: Serializer,
     {
-        let mut e = serializer.serialize_struct("error", 3)?;
+        let mut e = serializer.serialize_struct("Error", 3)?;
         let msg = self.0.to_string();
         e.serialize_field("msg", &msg)?;
         // e.serialize_field("backtrace", &self.0.backtrace().map(ToString::to_string))?;
