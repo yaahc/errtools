@@ -2,40 +2,34 @@
 use serde::de::{self, Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
 use std::fmt;
 
-const FIELDS: &'static [&'static str] = &["type_name", "msg", "source"];
-
 #[derive(Debug)]
 ///
 pub struct Error {
     type_name: Option<String>,
     msg: String,
-    source: Option<Box<SourceError>>,
+    source: Option<Box<Error>>,
 }
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.msg.as_str())
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.source.as_deref().map(|s| s as _)
+    }
+}
+
+const FIELDS: &'static [&'static str] = &["type_name", "msg", "source"];
 
 struct ErrorVisitor;
-
-#[derive(Debug)]
-struct SourceError {
-    msg: String,
-    source: Option<Box<SourceError>>,
-}
-
-struct SourceErrorVisitor;
 
 enum Field {
     TypeName,
     Msg,
     Source,
-}
-
-impl Field {
-    fn as_str(&self) -> &'static str {
-        match self {
-            Self::TypeName => FIELDS[0],
-            Self::Msg => FIELDS[1],
-            Self::Source => FIELDS[2],
-        }
-    }
 }
 
 impl<'de> Deserialize<'de> for Error {
@@ -75,39 +69,6 @@ impl<'de> Deserialize<'de> for Field {
         }
 
         deserializer.deserialize_identifier(FieldVisitor)
-    }
-}
-
-impl<'de> Deserialize<'de> for SourceError {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_struct("Error", &FIELDS[1..], SourceErrorVisitor)
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.msg.as_str())
-    }
-}
-
-impl fmt::Display for SourceError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.msg.as_str())
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.source.as_deref().map(|s| s as _)
-    }
-}
-
-impl std::error::Error for SourceError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.source.as_deref().map(|s| s as _)
     }
 }
 
@@ -180,63 +141,11 @@ impl<'de> Visitor<'de> for ErrorVisitor {
     }
 }
 
-impl<'de> Visitor<'de> for SourceErrorVisitor {
-    type Value = SourceError;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("struct errtools::deserialize::Error")
-    }
-
-    fn visit_seq<V>(self, mut seq: V) -> Result<SourceError, V::Error>
-    where
-        V: SeqAccess<'de>,
-    {
-        let msg = seq
-            .next_element()?
-            .ok_or_else(|| de::Error::invalid_length(1, &self))?;
-        let source = seq
-            .next_element()?
-            .ok_or_else(|| de::Error::invalid_length(2, &self))?;
-
-        Ok(SourceError { msg, source })
-    }
-
-    fn visit_map<V>(self, mut map: V) -> Result<SourceError, V::Error>
-    where
-        V: MapAccess<'de>,
-    {
-        let mut msg = None;
-        let mut source = None;
-        while let Some(key) = map.next_key()? {
-            match key {
-                Field::Msg => {
-                    if msg.is_some() {
-                        return Err(de::Error::duplicate_field("msg"));
-                    }
-                    msg = Some(map.next_value()?);
-                }
-                Field::Source => {
-                    if source.is_some() {
-                        return Err(de::Error::duplicate_field("source"));
-                    }
-                    source = Some(map.next_value()?);
-                }
-                _ => Err(de::Error::unknown_field(key.as_str(), &FIELDS[1..]))?,
-            }
-        }
-
-        let msg = msg.ok_or_else(|| de::Error::missing_field("msg"))?;
-        let source = source.ok_or_else(|| de::Error::missing_field("source"))?;
-
-        Ok(SourceError { msg, source })
-    }
-}
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::Error;
     use crate::*;
     use eyre::{eyre, Report};
-    use std::error::Error;
     use std::fmt::Write;
 
     #[test]
@@ -262,7 +171,8 @@ mod tests {
         let err = super::Error {
             type_name: Some("FakeError".into()),
             msg: "outer error".into(),
-            source: Some(Box::new(SourceError {
+            source: Some(Box::new(Error {
+                type_name: None,
                 msg: "root cause".into(),
                 source: None,
             })),
@@ -277,18 +187,19 @@ mod tests {
         let err = super::Error {
             type_name: Some("FakeError".into()),
             msg: "outer error".into(),
-            source: Some(Box::new(SourceError {
+            source: Some(Box::new(Error {
+                type_name: None,
                 msg: "root cause".into(),
                 source: None,
             })),
         };
-        let err: &dyn Error = &err;
+        let err: &dyn std::error::Error = &err;
         let json = serde_json::to_string_pretty(&err.serialize()).unwrap();
 
         println!("dyn serialization:\n{}", json);
     }
 
-    fn report(error: &dyn Error) -> String {
+    fn report(error: &dyn std::error::Error) -> String {
         let mut out = String::new();
         let mut cur_error = Some(error);
 
@@ -305,7 +216,8 @@ mod tests {
         let err = super::Error {
             type_name: Some("FakeError".into()),
             msg: "outer error".into(),
-            source: Some(Box::new(SourceError {
+            source: Some(Box::new(Error {
+                type_name: None,
                 msg: "root cause".into(),
                 source: None,
             })),
@@ -326,18 +238,19 @@ mod tests {
         let err = super::Error {
             type_name: Some("FakeError".into()),
             msg: "outer error".into(),
-            source: Some(Box::new(SourceError {
+            source: Some(Box::new(Error {
+                type_name: None,
                 msg: "root cause".into(),
                 source: None,
             })),
         };
 
-        let err: &(dyn Error + Send + Sync + 'static) = &err;
+        let err: &(dyn std::error::Error + Send + Sync + 'static) = &err;
         let json = serde_json::to_string_pretty(&err.serialize()).unwrap();
         let display = report(err);
 
         let err_out: deserialize::Error = serde_json::from_str(&json).unwrap();
-        let err_out = &err_out as &dyn Error;
+        let err_out = &err_out as &dyn std::error::Error;
         let deserialized_display = report(err_out);
 
         assert_eq!(display, deserialized_display);
@@ -348,7 +261,8 @@ mod tests {
         let err = super::Error {
             type_name: Some("FakeError".into()),
             msg: "outer error".into(),
-            source: Some(Box::new(SourceError {
+            source: Some(Box::new(Error {
+                type_name: None,
                 msg: "root cause".into(),
                 source: None,
             })),
@@ -369,18 +283,19 @@ mod tests {
         let err = super::Error {
             type_name: Some("FakeError".into()),
             msg: "outer error".into(),
-            source: Some(Box::new(SourceError {
+            source: Some(Box::new(Error {
+                type_name: None,
                 msg: "root cause".into(),
                 source: None,
             })),
         };
 
-        let err: &(dyn Error + Send + Sync + 'static) = &err;
+        let err: &(dyn std::error::Error + Send + Sync + 'static) = &err;
         let buf = bincode::serialize(&err.serialize()).unwrap();
         let display = report(err);
 
         let err_out: deserialize::Error = bincode::deserialize(&buf).unwrap();
-        let err_out = &err_out as &dyn Error;
+        let err_out = &err_out as &dyn std::error::Error;
         let deserialized_display = report(err_out);
 
         assert_eq!(display, deserialized_display);

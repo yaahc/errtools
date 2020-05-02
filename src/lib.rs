@@ -160,6 +160,7 @@ impl Serialize for SerializeableError<'_> {
     {
         let mut e = serializer.serialize_struct("Error", 3)?;
         let msg = self.0.to_string();
+        e.serialize_field("type_name", &None::<String>)?;
         e.serialize_field("msg", &msg)?;
         // e.serialize_field("backtrace", &self.0.backtrace().map(ToString::to_string))?;
         e.serialize_field("source", &self.0.source().map(ErrTools::serialize))?;
@@ -175,9 +176,9 @@ where
     where
         S: Serializer,
     {
-        let mut e = serializer.serialize_struct("error", 4)?;
+        let mut e = serializer.serialize_struct("error", 3)?;
         let msg = self.0.to_string();
-        e.serialize_field("type_name", &std::any::type_name::<E>())?;
+        e.serialize_field("type_name", &Some(std::any::type_name::<E>()))?;
         e.serialize_field("msg", &msg)?;
         // e.serialize_field("backtrace", &self.0.backtrace().map(ToString::to_string))?;
         e.serialize_field("source", &self.0.source().map(ErrTools::serialize))?;
