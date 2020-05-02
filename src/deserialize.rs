@@ -169,7 +169,6 @@ impl<'de> Visitor<'de> for ErrorVisitor {
             }
         }
 
-        let type_name = type_name.ok_or_else(|| de::Error::missing_field("type_name"))?;
         let msg = msg.ok_or_else(|| de::Error::missing_field("msg"))?;
         let source = source.ok_or_else(|| de::Error::missing_field("source"))?;
 
@@ -230,5 +229,160 @@ impl<'de> Visitor<'de> for SourceErrorVisitor {
         let source = source.ok_or_else(|| de::Error::missing_field("source"))?;
 
         Ok(SourceError { msg, source })
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::*;
+    use eyre::{eyre, Report};
+    use std::error::Error;
+    use std::fmt::Write;
+
+    #[test]
+    fn serialize_eyre() {
+        let err: Report = eyre!("root cause")
+            .wrap_err("second error")
+            .wrap_err("outermost error");
+        let json = serde_json::to_string_pretty(&err.serialize()).unwrap();
+        println!("{}", json);
+    }
+
+    #[test]
+    fn serialize_anyhow() {
+        let err = anyhow::anyhow!("root cause")
+            .context("second error")
+            .context("outermost error");
+        let json = serde_json::to_string_pretty(&err.serialize()).unwrap();
+        println!("{}", json);
+    }
+
+    #[test]
+    fn serialize_concrete() {
+        let err = super::Error {
+            type_name: Some("FakeError".into()),
+            msg: "outer error".into(),
+            source: Some(Box::new(SourceError {
+                msg: "root cause".into(),
+                source: None,
+            })),
+        };
+        let json = serde_json::to_string_pretty(&err.serialize()).unwrap();
+
+        println!("concrete serialization:\n{}\n", json);
+    }
+
+    #[test]
+    fn serialize_dyn() {
+        let err = super::Error {
+            type_name: Some("FakeError".into()),
+            msg: "outer error".into(),
+            source: Some(Box::new(SourceError {
+                msg: "root cause".into(),
+                source: None,
+            })),
+        };
+        let err: &dyn Error = &err;
+        let json = serde_json::to_string_pretty(&err.serialize()).unwrap();
+
+        println!("dyn serialization:\n{}", json);
+    }
+
+    fn report(error: &dyn Error) -> String {
+        let mut out = String::new();
+        let mut cur_error = Some(error);
+
+        while let Some(error) = cur_error {
+            writeln!(out, "{}", error).unwrap();
+            cur_error = error.source();
+        }
+
+        out
+    }
+
+    #[test]
+    fn deserialize_concrete() {
+        let err = super::Error {
+            type_name: Some("FakeError".into()),
+            msg: "outer error".into(),
+            source: Some(Box::new(SourceError {
+                msg: "root cause".into(),
+                source: None,
+            })),
+        };
+        let json = serde_json::to_string_pretty(&err.serialize()).unwrap();
+        let report: Report = err.into();
+        let display = report.to_string();
+
+        let err_out: deserialize::Error = serde_json::from_str(&json).unwrap();
+        let report: Report = err_out.into();
+        let deserialized_display = report.to_string();
+
+        assert_eq!(display, deserialized_display);
+    }
+
+    #[test]
+    fn deserialize_dyn() {
+        let err = super::Error {
+            type_name: Some("FakeError".into()),
+            msg: "outer error".into(),
+            source: Some(Box::new(SourceError {
+                msg: "root cause".into(),
+                source: None,
+            })),
+        };
+
+        let err: &(dyn Error + Send + Sync + 'static) = &err;
+        let json = serde_json::to_string_pretty(&err.serialize()).unwrap();
+        let display = report(err);
+
+        let err_out: deserialize::Error = serde_json::from_str(&json).unwrap();
+        let err_out = &err_out as &dyn Error;
+        let deserialized_display = report(err_out);
+
+        assert_eq!(display, deserialized_display);
+    }
+
+    #[test]
+    fn deserialize_concrete_bincode() {
+        let err = super::Error {
+            type_name: Some("FakeError".into()),
+            msg: "outer error".into(),
+            source: Some(Box::new(SourceError {
+                msg: "root cause".into(),
+                source: None,
+            })),
+        };
+        let buf = bincode::serialize(&err.serialize()).unwrap();
+        let report: Report = err.into();
+        let display = report.to_string();
+
+        let err_out: deserialize::Error = bincode::deserialize(&buf).unwrap();
+        let report: Report = err_out.into();
+        let deserialized_display = report.to_string();
+
+        assert_eq!(display, deserialized_display);
+    }
+
+    #[test]
+    fn deserialize_dyn_bincode() {
+        let err = super::Error {
+            type_name: Some("FakeError".into()),
+            msg: "outer error".into(),
+            source: Some(Box::new(SourceError {
+                msg: "root cause".into(),
+                source: None,
+            })),
+        };
+
+        let err: &(dyn Error + Send + Sync + 'static) = &err;
+        let buf = bincode::serialize(&err.serialize()).unwrap();
+        let display = report(err);
+
+        let err_out: deserialize::Error = bincode::deserialize(&buf).unwrap();
+        let err_out = &err_out as &dyn Error;
+        let deserialized_display = report(err_out);
+
+        assert_eq!(display, deserialized_display);
     }
 }
